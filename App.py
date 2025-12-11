@@ -5,8 +5,11 @@ import torch.nn.functional as F
 from torchvision import transforms
 from PIL import Image
 import numpy as np
+import io
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ---------------------- MODEL DEFINITIONS ----------------------
 
 class ResnetBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -62,37 +65,45 @@ class Encoder(nn.Module):
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv3(input_S))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv4(x4))
         x2 = F.leaky_relu(self.conv5(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv6(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x4 = torch.cat((input_C,x4),1)
+
         x1 = F.leaky_relu(self.conv7(x4))
         x2 = F.leaky_relu(self.conv8(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv9(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv10(x4))
         x2 = F.leaky_relu(self.conv11(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv12(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv13(x4))
         x2 = F.leaky_relu(self.conv14(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv15(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv16(x4))
         x2 = F.leaky_relu(self.conv17(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv18(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv19(x4))
         x2 = F.leaky_relu(self.conv20(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv21(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         return torch.tanh(self.conv22(x4))
 
 
@@ -122,26 +133,31 @@ class Decoder(nn.Module):
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv3(x))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv4(x4))
         x2 = F.leaky_relu(self.conv5(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv6(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv7(x4))
         x2 = F.leaky_relu(self.conv8(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv9(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv10(x4))
         x2 = F.leaky_relu(self.conv11(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv12(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         x1 = F.leaky_relu(self.conv13(x4))
         x2 = F.leaky_relu(self.conv14(x4))
         x2 = F.pad(x2,(0,1,0,1))
         x3 = F.leaky_relu(self.conv15(x4))
         x4 = torch.cat((x1,x2,x3),1)
+
         return torch.tanh(self.conv16(x4))
 
 
@@ -157,7 +173,8 @@ class Make_model(nn.Module):
         return encoded, decoded
 
 
-# Load weights
+# ---------------------- LOAD MODEL ----------------------
+
 @st.cache_resource
 def load_model():
     model = Make_model().to(device)
@@ -169,38 +186,102 @@ def load_model():
 model = load_model()
 
 
+# ---------------------- HELPERS ----------------------
 
-# Streamlit interface
-st.title("Deep Steganography")
+transform_img = transforms.Compose([
+    transforms.Resize((256,256)),
+    transforms.ToTensor()
+])
 
-col1, col2 = st.columns(2)
+def to_np(img_tensor):
+    img = img_tensor.squeeze().cpu().numpy()
+    img = np.transpose(img, (1,2,0))
+    return np.clip(img, 0, 1)
 
-with col1:
-    uploaded_cover = st.file_uploader("Upload Cover Image", type=["png","jpg","jpeg"], key="cover")
-    if uploaded_cover:
-        cover_img = Image.open(uploaded_cover).convert("RGB")
-        st.image(cover_img, caption="Cover Image", use_container_width=True)
 
-with col2:
-    uploaded_secret = st.file_uploader("Upload Secret Image", type=["png","jpg","jpeg"], key="secret")
-    if uploaded_secret:
-        secret_img = Image.open(uploaded_secret).convert("RGB")
-        st.image(secret_img, caption="Secret Image", use_container_width=True)
+# ---------------------- APP UI ----------------------
 
-if uploaded_cover and uploaded_secret:
-    if st.button("Encode & Decode"):
-        transform_img = transforms.Compose([transforms.Resize((256,256)), transforms.ToTensor()])
-        cover_tensor = transform_img(cover_img).unsqueeze(0).to(device)
-        secret_tensor = transform_img(secret_img).unsqueeze(0).to(device)
+st.title("Deep Steganography Tool")
 
-        with torch.no_grad():
-            encoded_C, decoded_S = model(secret_tensor, cover_tensor)
+mode = st.radio("Choose action", ["Encode", "Decode"], horizontal=True)
 
-        def to_np(img):
-            img = img.squeeze().cpu().numpy()
-            return np.clip(np.transpose(img, (1,2,0)), 0, 1)
+# ---------------------- ENCODE MODE ----------------------
 
-        st.subheader("Results")
-        res_col1, res_col2 = st.columns(2)
-        res_col1.image(to_np(encoded_C), caption="Encoded Cover", use_container_width=True)
-        res_col2.image(to_np(decoded_S), caption="Decoded Secret", use_container_width=True)
+if mode == "Encode":
+    st.subheader("Encoding Mode")
+
+    cover = st.file_uploader("Upload Cover Image", type=["png","jpg","jpeg"])
+    secret = st.file_uploader("Upload Secret Image", type=["png","jpg","jpeg"])
+
+    if cover:
+        cover.seek(0)
+        st.image(Image.open(cover), caption="Cover Image", use_container_width=True)
+
+    if secret:
+        secret.seek(0)
+        st.image(Image.open(secret), caption="Secret Image", use_container_width=True)
+
+    if cover and secret:
+        if st.button("Encode"):
+            cover.seek(0)
+            secret.seek(0)
+
+            cover_img = Image.open(cover).convert("RGB")
+            secret_img = Image.open(secret).convert("RGB")
+
+            cover_tensor = transform_img(cover_img).unsqueeze(0).to(device)
+            secret_tensor = transform_img(secret_img).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                encoded, _ = model(secret_tensor, cover_tensor)
+
+            encoded_np = to_np(encoded)
+
+            st.image(encoded_np, caption="Encoded Output", use_container_width=True)
+
+            buf = io.BytesIO()
+            Image.fromarray((encoded_np*255).astype(np.uint8)).save(buf, format="PNG")
+            buf.seek(0)
+
+            st.download_button(
+                label="Download Encoded Image",
+                data=buf,
+                file_name="encoded.png",
+                mime="image/png"
+            )
+
+
+# ---------------------- DECODE MODE ----------------------
+
+if mode == "Decode":
+    st.subheader("Decoding Mode")
+
+    encoded_img = st.file_uploader("Upload Encoded Image", type=["png","jpg","jpeg"])
+
+    if encoded_img:
+        encoded_img.seek(0)
+        img = Image.open(encoded_img)
+        st.image(img, caption="Encoded Image", use_container_width=True)
+
+        if st.button("Decode"):
+            encoded_img.seek(0)
+            enc = Image.open(encoded_img).convert("RGB")
+            enc_tensor = transform_img(enc).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                decoded = model.decoder(enc_tensor)
+
+            decoded_np = to_np(decoded)
+
+            st.image(decoded_np, caption="Decoded Secret", use_container_width=True)
+
+            buf = io.BytesIO()
+            Image.fromarray((decoded_np*255).astype(np.uint8)).save(buf, format="PNG")
+            buf.seek(0)
+
+            st.download_button(
+                label="Download Decoded Image",
+                data=buf,
+                file_name="decoded.png",
+                mime="image/png"
+            )
